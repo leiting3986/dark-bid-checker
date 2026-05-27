@@ -48,10 +48,12 @@ class DarkBidFixer:
         page_req = self.req.get("page", {})
         margins = page_req.get("margins", {})
 
+        width_mm = page_req.get("width_mm", 210)
+        height_mm = page_req.get("height_mm", 297)
+
         for section in doc.sections:
-            # 设置纸张大小为 A4
-            section.page_width = Cm(21)
-            section.page_height = Cm(29.7)
+            section.page_width = Cm(width_mm / 10)
+            section.page_height = Cm(height_mm / 10)
 
             # 设置页边距
             section.top_margin = Cm(margins.get("top_cm", 2.5))
@@ -71,7 +73,7 @@ class DarkBidFixer:
         if page_req.get("noHeader", True):
             for section in doc.sections:
                 header = section.header
-                header.is_linked_to_previous = True
+                header.is_linked_to_previous = False
                 for para in header.paragraphs:
                     para.clear()
                 changes.append("删除页眉")
@@ -79,7 +81,7 @@ class DarkBidFixer:
         if page_req.get("noFooter", True):
             for section in doc.sections:
                 footer = section.footer
-                footer.is_linked_to_previous = True
+                footer.is_linked_to_previous = False
                 for para in footer.paragraphs:
                     para.clear()
                 changes.append("删除页脚")
@@ -121,7 +123,7 @@ class DarkBidFixer:
                     size_changed = True
 
                 color_rgb = RGBColor.from_string(expected_color)
-                if run.font.color.rgb != color_rgb:
+                if run.font.color is None or run.font.color.rgb != color_rgb:
                     run.font.color.rgb = color_rgb
                     color_changed = True
 
@@ -163,7 +165,7 @@ class DarkBidFixer:
                                 size_changed = True
 
                             color_rgb = RGBColor.from_string(expected_color)
-                            if run.font.color.rgb != color_rgb:
+                            if run.font.color is None or run.font.color.rgb != color_rgb:
                                 run.font.color.rgb = color_rgb
                                 color_changed = True
 

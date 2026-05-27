@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 60000,
+  timeout: 120000,
 })
 
 // 获取配置列表
@@ -29,7 +29,7 @@ export const checkDocument = (file, configName) => {
 // 修复文档
 export const fixDocument = (fileId, configName) => {
   const params = configName ? { config_name: configName } : {}
-  return api.post(`/fix?file_id=${fileId}`, null, { params })
+  return api.post(`/fix/${fileId}`, null, { params })
 }
 
 // 下载修复后的文件

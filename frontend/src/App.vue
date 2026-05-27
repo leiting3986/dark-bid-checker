@@ -4,7 +4,7 @@
     <el-header class="app-header">
       <div class="header-content">
         <h1>暗标检查工具</h1>
-        <el-tag type="info">v1.0</el-tag>
+        <el-tag type="info">v1.1</el-tag>
       </div>
     </el-header>
 
@@ -12,7 +12,7 @@
     <el-main class="app-main">
       <el-row :gutter="24">
         <!-- 左侧：上传和配置 -->
-        <el-col :span="8">
+        <el-col :xs="24" :span="8">
           <el-card class="upload-card" shadow="hover">
             <template #header>
               <div class="card-header">
@@ -21,22 +21,23 @@
             </template>
 
             <el-upload
+              ref="uploadRef"
               class="upload-area"
               drag
               :auto-upload="false"
               :on-change="handleFileChange"
               :on-remove="handleFileRemove"
               :file-list="fileList"
-              accept=".docx"
+              accept=".doc,.docx"
               :limit="1"
               :on-exceed="handleExceed"
             >
               <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
               <div class="el-upload__text">
-                将 .docx 文件拖到此处，或<em>点击上传</em>
+                将 .doc 或 .docx 文件拖到此处，或<em>点击上传</em>
               </div>
               <template #tip>
-                <div class="el-upload__tip">仅支持 .docx 格式的 Word 文档</div>
+                <div class="el-upload__tip">支持 .doc 和 .docx 格式，最大 50MB</div>
               </template>
             </el-upload>
 
@@ -44,7 +45,7 @@
               type="primary"
               class="check-btn"
               :loading="checking"
-              :disabled="!selectedFile"
+              :disabled="!selectedFile || !currentConfig"
               @click="startCheck"
             >
               开始检查
@@ -55,26 +56,29 @@
             <template #header>
               <div class="card-header">
                 <span>暗标要求配置</span>
-                <el-button type="primary" link @click="showConfigEditor = true">
+                <el-button type="primary" link @click="showConfigEditor = true" :disabled="!currentConfig">
                   编辑配置
                 </el-button>
               </div>
             </template>
 
-            <div class="config-summary">
+            <div class="config-summary" v-if="currentConfig">
               <el-descriptions :column="1" border size="small">
-                <el-descriptions-item label="纸张">A4</el-descriptions-item>
-                <el-descriptions-item label="页边距">2.5cm (四边)</el-descriptions-item>
-                <el-descriptions-item label="正文字体">宋体 四号</el-descriptions-item>
-                <el-descriptions-item label="行距">固定值 28 磅</el-descriptions-item>
-                <el-descriptions-item label="表格字体">仿宋 五号</el-descriptions-item>
+                <el-descriptions-item label="纸张">{{ currentConfig.requirements?.page?.size || 'A4' }}</el-descriptions-item>
+                <el-descriptions-item label="页边距">{{ currentConfig.requirements?.page?.margins?.top_cm || 2.5 }}cm (四边)</el-descriptions-item>
+                <el-descriptions-item label="正文字体">{{ currentConfig.requirements?.text?.font || '宋体' }} {{ currentConfig.requirements?.text?.fontSize_name || '四号' }}</el-descriptions-item>
+                <el-descriptions-item label="行距">固定值 {{ currentConfig.requirements?.text?.lineSpacing?.value_pt || 28 }} 磅</el-descriptions-item>
+                <el-descriptions-item label="表格字体">{{ currentConfig.requirements?.table?.font || '仿宋' }} {{ currentConfig.requirements?.table?.fontSize_name || '五号' }}</el-descriptions-item>
               </el-descriptions>
+            </div>
+            <div v-else class="config-loading">
+              <el-skeleton :rows="5" animated />
             </div>
           </el-card>
         </el-col>
 
         <!-- 右侧：检查结果 -->
-        <el-col :span="16">
+        <el-col :xs="24" :span="16">
           <el-card class="result-card" shadow="hover">
             <template #header>
               <div class="card-header">
@@ -143,7 +147,7 @@
               />
 
               <!-- 错误列表 -->
-              <div v-if="checkResult.errors.length > 0" class="error-list">
+              <div v-if="checkResult.errors?.length > 0" class="error-list">
                 <h4>错误项</h4>
                 <el-collapse>
                   <el-collapse-item
@@ -165,7 +169,7 @@
               </div>
 
               <!-- 警告列表 -->
-              <div v-if="checkResult.warnings.length > 0" class="warning-list">
+              <div v-if="checkResult.warnings?.length > 0" class="warning-list">
                 <h4>警告项</h4>
                 <el-collapse>
                   <el-collapse-item
@@ -186,16 +190,21 @@
               </div>
 
               <!-- 通过项 -->
-              <div v-if="checkResult.passed.length > 0" class="passed-list">
-                <h4>通过项</h4>
-                <el-tag
-                  v-for="(item, index) in checkResult.passed"
-                  :key="'passed-' + index"
-                  type="success"
-                  class="passed-tag"
-                >
-                  {{ item }}
-                </el-tag>
+              <div v-if="checkResult.passed?.length > 0" class="passed-list">
+                <el-collapse>
+                  <el-collapse-item title="通过项" name="passed">
+                    <div class="passed-tags">
+                      <el-tag
+                        v-for="(item, index) in checkResult.passed"
+                        :key="'passed-' + index"
+                        type="success"
+                        class="passed-tag"
+                      >
+                        {{ item }}
+                      </el-tag>
+                    </div>
+                  </el-collapse-item>
+                </el-collapse>
               </div>
             </div>
           </el-card>
@@ -211,7 +220,7 @@
       :close-on-click-modal="false"
     >
       <ConfigEditor
-        v-if="showConfigEditor"
+        v-if="showConfigEditor && currentConfig"
         :config="currentConfig"
         @save="handleConfigSave"
         @cancel="showConfigEditor = false"
@@ -224,9 +233,10 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
-import { checkDocument, fixDocument, downloadFixed, cleanupFiles, getConfig } from './utils/api'
+import { checkDocument, fixDocument, downloadFixed, cleanupFiles, getConfig, updateConfig } from './utils/api'
 import ConfigEditor from './components/ConfigEditor.vue'
 
+const uploadRef = ref(null)
 const selectedFile = ref(null)
 const fileList = ref([])
 const checking = ref(false)
@@ -242,11 +252,27 @@ onMounted(async () => {
     const res = await getConfig('default_requirements.json')
     currentConfig.value = res.data
   } catch (e) {
+    ElMessage.error('加载配置失败')
     console.error('加载配置失败', e)
   }
 })
 
 const handleFileChange = (file, uploadFileList) => {
+  // 文件大小检查 50MB
+  if (file.raw.size > 50 * 1024 * 1024) {
+    ElMessage.warning('文件大小超过 50MB 限制')
+    fileList.value = []
+    selectedFile.value = null
+    return
+  }
+  // 文件格式检查
+  const name = file.raw.name.toLowerCase()
+  if (!name.endsWith('.doc') && !name.endsWith('.docx')) {
+    ElMessage.warning('仅支持 .doc 和 .docx 格式')
+    fileList.value = []
+    selectedFile.value = null
+    return
+  }
   selectedFile.value = file.raw
   fileList.value = uploadFileList.slice(-1)
   checkResult.value = null
@@ -254,17 +280,29 @@ const handleFileChange = (file, uploadFileList) => {
 }
 
 const handleFileRemove = () => {
+  // 清理之前的服务端文件
+  if (fileId.value) {
+    cleanupFiles(fileId.value).catch(() => {})
+  }
   selectedFile.value = null
   checkResult.value = null
   fixedFileId.value = null
+  fileId.value = null
 }
 
 const handleExceed = (files) => {
-  fileList.value = []
+  // 清理之前的服务端文件
+  if (fileId.value) {
+    cleanupFiles(fileId.value).catch(() => {})
+  }
+  if (uploadRef.value) {
+    uploadRef.value.clearFiles()
+  }
   selectedFile.value = files[0]
   fileList.value = [{ name: files[0].name, url: '', raw: files[0] }]
   checkResult.value = null
   fixedFileId.value = null
+  fileId.value = null
 }
 
 const startCheck = async () => {
@@ -273,12 +311,17 @@ const startCheck = async () => {
     return
   }
 
+  // 清理之前的服务端文件
+  if (fileId.value) {
+    cleanupFiles(fileId.value).catch(() => {})
+  }
+
   checking.value = true
   checkResult.value = null
   fixedFileId.value = null
 
   try {
-    const res = await checkDocument(selectedFile.value)
+    const res = await checkDocument(selectedFile.value, 'default_requirements.json')
     checkResult.value = res.data.result
     fileId.value = res.data.file_id
 
@@ -300,16 +343,21 @@ const startFix = async () => {
     return
   }
 
-  await ElMessageBox.confirm('将自动修复文档格式，是否继续？', '确认修复', {
-    confirmButtonText: '开始修复',
-    cancelButtonText: '取消',
-    type: 'info',
-  })
+  try {
+    await ElMessageBox.confirm('将自动修复文档格式，是否继续？', '确认修复', {
+      confirmButtonText: '开始修复',
+      cancelButtonText: '取消',
+      type: 'info',
+    })
+  } catch {
+    // 用户取消
+    return
+  }
 
   fixing.value = true
 
   try {
-    const res = await fixDocument(fileId.value)
+    const res = await fixDocument(fileId.value, 'default_requirements.json')
     fixedFileId.value = fileId.value
     ElMessage.success(`修复完成，共修改 ${res.data.result.total_changes} 处`)
   } catch (e) {
@@ -327,10 +375,18 @@ const downloadFixedFile = async () => {
 
   try {
     const res = await downloadFixed(fixedFileId.value)
+    // 检查响应是否为 JSON 错误
+    if (res.data.type === 'application/json') {
+      const text = await res.data.text()
+      const err = JSON.parse(text)
+      ElMessage.error(err.detail || '下载失败')
+      return
+    }
     const url = window.URL.createObjectURL(new Blob([res.data]))
     const link = document.createElement('a')
     link.href = url
-    link.setAttribute('download', `fixed_${fixedFileId.value}.docx`)
+    const originalName = selectedFile.value?.name || 'document'
+    link.setAttribute('download', `fixed_${originalName}`)
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -341,9 +397,14 @@ const downloadFixedFile = async () => {
 }
 
 const handleConfigSave = async (config) => {
-  currentConfig.value = config
-  showConfigEditor.value = false
-  ElMessage.success('配置已保存')
+  try {
+    await updateConfig('default_requirements.json', config)
+    currentConfig.value = config
+    showConfigEditor.value = false
+    ElMessage.success('配置已保存')
+  } catch (e) {
+    ElMessage.error('保存配置失败: ' + (e.response?.data?.detail || e.message))
+  }
 }
 </script>
 
@@ -408,6 +469,10 @@ const handleConfigSave = async (config) => {
   margin-top: 8px;
 }
 
+.config-loading {
+  padding: 8px;
+}
+
 .result-actions {
   display: flex;
   gap: 12px;
@@ -433,8 +498,7 @@ const handleConfigSave = async (config) => {
 }
 
 .error-list h4,
-.warning-list h4,
-.passed-list h4 {
+.warning-list h4 {
   margin-bottom: 12px;
   color: #303133;
 }
@@ -463,8 +527,14 @@ const handleConfigSave = async (config) => {
   color: #606266;
 }
 
+.passed-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .passed-tag {
-  margin: 4px;
+  margin: 0;
 }
 
 .error-count {

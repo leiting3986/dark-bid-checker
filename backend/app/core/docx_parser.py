@@ -183,7 +183,7 @@ class DocxParser:
         try:
             header = section.header
             return header.is_linked_to_previous is False and len(header.paragraphs) > 0
-        except:
+        except Exception:
             return False
 
     def _has_footer(self, section) -> bool:
@@ -191,5 +191,5 @@ class DocxParser:
         try:
             footer = section.footer
             return footer.is_linked_to_previous is False and len(footer.paragraphs) > 0
-        except:
+        except Exception:
             return False

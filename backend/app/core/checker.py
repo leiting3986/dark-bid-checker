@@ -325,17 +325,46 @@ class DarkBidChecker:
                     "文档内容"
                 )
 
+        # 检查项目名称
+        for name in forbidden.get("projectNames", []):
+            if name and name in full_text:
+                result.add_error(
+                    "禁止内容",
+                    f"发现过往项目名称: {name}",
+                    "暗标中不得出现过往项目业绩内容",
+                    "文档内容"
+                )
+
+        # 检查标识符
+        for name in forbidden.get("identifiers", []):
+            if name and name in full_text:
+                result.add_error(
+                    "禁止内容",
+                    f"发现标识符: {name}",
+                    "暗标中不得出现可识别投标人身份的标识",
+                    "文档内容"
+                )
+
         # 检查自定义模式
         for pattern in forbidden.get("customPatterns", []):
             if pattern:
-                matches = re.findall(pattern, full_text)
-                if matches:
-                    result.add_error(
+                try:
+                    matches = re.findall(pattern, full_text)
+                    if matches:
+                        result.add_error(
+                            "禁止内容",
+                            f"发现禁止内容: {pattern}",
+                            f"匹配到: {', '.join(matches[:5])}",
+                            "文档内容"
+                        )
+                except re.error as e:
+                    result.add_warning(
                         "禁止内容",
-                        f"发现禁止内容: {pattern}",
-                        f"匹配到: {', '.join(matches[:5])}",
-                        "文档内容"
+                        f"正则表达式无效: {pattern}",
+                        f"错误: {e}",
+                        "配置"
                     )
 
-        if not any(forbidden.get(k) for k in ["bidderNames", "companyNames", "customPatterns"]):
+        all_keys = ["bidderNames", "companyNames", "projectNames", "identifiers", "customPatterns"]
+        if not any(forbidden.get(k) for k in all_keys):
             result.add_passed("禁止内容检查 (未配置禁止词)")

@@ -2,22 +2,43 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from typing import Optional
-import os
+import re
 import uuid
 from pathlib import Path
 
-from ..core import ConfigManager, DarkBidChecker, DarkBidFixer
+from ..core import ConfigManager, DarkBidChecker, DarkBidFixer, doc_to_docx, is_doc_file
 
 router = APIRouter()
 
 # 配置管理器
 config_manager = ConfigManager(config_dir="config")
 
-# 上传目录
-UPLOAD_DIR = Path("uploads")
-OUTPUT_DIR = Path("output")
+# 使用绝对路径
+BASE_DIR = Path(__file__).parent.parent.parent
+UPLOAD_DIR = BASE_DIR / "uploads"
+OUTPUT_DIR = BASE_DIR / "output"
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# 文件大小限制 50MB
+MAX_FILE_SIZE = 50 * 1024 * 1024
+
+# UUID 格式校验
+UUID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+
+
+def validate_file_id(file_id: str) -> str:
+    """校验 file_id 格式，防止路径遍历"""
+    if not UUID_PATTERN.match(file_id):
+        raise HTTPException(status_code=400, detail="无效的文件 ID")
+    return file_id
+
+
+def validate_config_name(config_name: str) -> str:
+    """校验配置文件名，防止路径遍历"""
+    if not re.match(r'^[a-zA-Z0-9_\-一-龥]+\.json$', config_name):
+        raise HTTPException(status_code=400, detail="无效的配置文件名")
+    return config_name
 
 
 @router.get("/configs")
@@ -32,6 +53,7 @@ async def list_configs():
 @router.get("/config/{config_name}")
 async def get_config(config_name: str):
     """获取指定配置"""
+    validate_config_name(config_name)
     try:
         config = config_manager.load_config(config_name)
         return config
@@ -42,6 +64,10 @@ async def get_config(config_name: str):
 @router.put("/config/{config_name}")
 async def update_config(config_name: str, config: dict):
     """更新配置"""
+    validate_config_name(config_name)
+    # 基本结构验证
+    if "requirements" not in config:
+        raise HTTPException(status_code=400, detail="配置必须包含 requirements 字段")
     path = config_manager.save_config(config, config_name)
     return {"success": True, "path": path}
 
@@ -49,17 +75,41 @@ async def update_config(config_name: str, config: dict):
 @router.post("/check")
 async def check_document(file: UploadFile = File(...), config_name: Optional[str] = None):
     """检查文档格式"""
-    if not file.filename.endswith(".docx"):
-        raise HTTPException(status_code=400, detail="仅支持 .docx 格式文件")
+    filename_lower = file.filename.lower()
+    if not (filename_lower.endswith(".docx") or filename_lower.endswith(".doc")):
+        raise HTTPException(status_code=400, detail="仅支持 .doc 和 .docx 格式文件")
 
-    # 保存上传文件
+    # 文件大小检查
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail=f"文件大小超过限制 ({MAX_FILE_SIZE // 1024 // 1024}MB)")
+
     file_id = str(uuid.uuid4())
+    original_path = UPLOAD_DIR / f"{file_id}_original{Path(file.filename).suffix}"
     input_path = UPLOAD_DIR / f"{file_id}.docx"
 
     try:
-        content = await file.read()
-        with open(input_path, "wb") as f:
+        # 保存原始文件
+        with open(original_path, "wb") as f:
             f.write(content)
+
+        # 如果是 .doc 格式，转换为 .docx
+        if is_doc_file(file.filename):
+            try:
+                doc_to_docx(str(original_path), str(UPLOAD_DIR))
+                # 转换后的文件名基于 file_id
+                converted_path = UPLOAD_DIR / f"{file_id}_original.docx"
+                if converted_path.exists():
+                    converted_path.rename(input_path)
+                else:
+                    raise HTTPException(status_code=500, detail="doc 转换失败")
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"doc 转换失败: {str(e)}")
+        else:
+            # .docx 直接重命名
+            original_path.rename(input_path)
 
         # 加载配置
         if config_name:
@@ -82,12 +132,13 @@ async def check_document(file: UploadFile = File(...), config_name: Optional[str
         # 清理文件
         if input_path.exists():
             input_path.unlink()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="检查失败，请确认文件格式正确")
 
 
-@router.post("/fix")
+@router.post("/fix/{file_id}")
 async def fix_document(file_id: str, config_name: Optional[str] = None):
     """修复文档格式"""
+    validate_file_id(file_id)
     input_path = UPLOAD_DIR / f"{file_id}.docx"
 
     if not input_path.exists():
@@ -112,12 +163,13 @@ async def fix_document(file_id: str, config_name: Optional[str] = None):
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="修复失败，请确认文件格式正确")
 
 
 @router.get("/download/{file_id}")
 async def download_fixed(file_id: str):
     """下载修复后的文件"""
+    validate_file_id(file_id)
     file_path = OUTPUT_DIR / f"{file_id}_fixed.docx"
 
     if not file_path.exists():
@@ -133,6 +185,7 @@ async def download_fixed(file_id: str):
 @router.delete("/cleanup/{file_id}")
 async def cleanup_files(file_id: str):
     """清理临时文件"""
+    validate_file_id(file_id)
     input_path = UPLOAD_DIR / f"{file_id}.docx"
     output_path = OUTPUT_DIR / f"{file_id}_fixed.docx"
 
