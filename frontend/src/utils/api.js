@@ -1,0 +1,43 @@
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: '/api',
+  timeout: 60000,
+})
+
+// 获取配置列表
+export const listConfigs = () => api.get('/configs')
+
+// 获取配置
+export const getConfig = (name) => api.get(`/config/${name}`)
+
+// 更新配置
+export const updateConfig = (name, config) => api.put(`/config/${name}`, config)
+
+// 检查文档
+export const checkDocument = (file, configName) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (configName) {
+    formData.append('config_name', configName)
+  }
+  return api.post('/check', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+// 修复文档
+export const fixDocument = (fileId, configName) => {
+  const params = configName ? { config_name: configName } : {}
+  return api.post(`/fix?file_id=${fileId}`, null, { params })
+}
+
+// 下载修复后的文件
+export const downloadFixed = (fileId) => {
+  return api.get(`/download/${fileId}`, { responseType: 'blob' })
+}
+
+// 清理文件
+export const cleanupFiles = (fileId) => api.delete(`/cleanup/${fileId}`)
+
+export default api

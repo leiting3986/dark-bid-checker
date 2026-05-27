@@ -1,0 +1,55 @@
+{
+  "version": "1.0",
+  "name": "技术标暗标要求",
+  "requirements": {
+    "signature": {
+      "enabled": true,
+      "description": "不得对'暗标'文件进行电子签章或上传带有签章的扫描页"
+    },
+    "page": {
+      "size": "A4",
+      "width_mm": 210,
+      "height_mm": 297,
+      "margins": {
+        "top_cm": 2.5,
+        "bottom_cm": 2.5,
+        "left_cm": 2.5,
+        "right_cm": 2.5
+      },
+      "noHeader": true,
+      "noFooter": true,
+      "noPageNumber": true
+    },
+    "text": {
+      "font": "宋体",
+      "fontSize_pt": 14,
+      "fontSize_name": "四号",
+      "fontColor": "000000",
+      "backgroundColor": "FFFFFF",
+      "paragraphSpacing_pt": 0,
+      "lineSpacing": {
+        "type": "exact",
+        "value_pt": 28
+      }
+    },
+    "table": {
+      "font": "仿宋",
+      "fontSize_pt": 10.5,
+      "fontSize_name": "五号",
+      "fontColor": "000000",
+      "backgroundColor": "FFFFFF"
+    },
+    "image": {
+      "mustBeComputerDrawn": true,
+      "backgroundColor": "FFFFFF",
+      "fontColor": "000000"
+    },
+    "forbiddenContent": {
+      "bidderNames": [],
+      "companyNames": [],
+      "projectNames": [],
+      "identifiers": [],
+      "customPatterns": []
+    }
+  }
+}
