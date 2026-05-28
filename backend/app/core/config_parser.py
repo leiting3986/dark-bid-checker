@@ -1,6 +1,7 @@
 """配置需求文本解析模块"""
 import re
 from typing import Dict, Any, List
+from .config_manager import PAGE_SIZE_MAP
 
 # 字号名 → pt 映射
 FONT_SIZE_MAP = {
@@ -27,6 +28,9 @@ def parse_requirements(text: str) -> Dict[str, Any]:
     if m:
         size = m.group(1).upper()
         result["page.size"] = size
+        if size in PAGE_SIZE_MAP:
+            result["page.width_mm"] = PAGE_SIZE_MAP[size]["width_mm"]
+            result["page.height_mm"] = PAGE_SIZE_MAP[size]["height_mm"]
 
     # 页边距
     margin_patterns = [
@@ -142,6 +146,8 @@ def get_parsed_fields_text(parsed: Dict[str, Any]) -> List[str]:
     """将解析结果转为可读文本列表"""
     labels = {
         "page.size": "纸张大小",
+        "page.width_mm": "纸张宽度",
+        "page.height_mm": "纸张高度",
         "page.margins.top_cm": "上边距",
         "page.margins.bottom_cm": "下边距",
         "page.margins.left_cm": "左边距",

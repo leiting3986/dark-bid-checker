@@ -14,14 +14,16 @@ export const getConfig = (name) => api.get(`/config/${name}`)
 // 更新配置
 export const updateConfig = (name, config) => api.put(`/config/${name}`, config)
 
+// 恢复默认配置
+export const resetConfig = (name) => api.post(`/config/${name}/reset`)
+
 // 检查文档
 export const checkDocument = (file, configName) => {
   const formData = new FormData()
   formData.append('file', file)
-  if (configName) {
-    formData.append('config_name', configName)
-  }
+  const params = configName ? { config_name: configName } : {}
   return api.post('/check', formData, {
+    params,
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }

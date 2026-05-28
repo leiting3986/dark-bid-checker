@@ -129,7 +129,7 @@
               <h2>检查结果</h2>
               <div v-if="result" class="result-actions">
                 <button
-                  v-if="!fixedFileId"
+                  v-if="!fixedFileId && !result.is_valid"
                   class="btn btn-success"
                   :disabled="fixing"
                   @click="startFix"
@@ -277,10 +277,24 @@ const showConfig = ref(false)
 const config = ref(null)
 const fileId = ref(null)
 
+const fontSizeMap = {
+  42: '初号', 36: '小初', 26: '一号', 24: '小一', 22: '二号',
+  18: '小二', 16: '三号', 15: '小三', 14: '四号', 12: '小四',
+  10.5: '五号', 9: '小五', 7.5: '六号', 6.5: '小六', 5.5: '七号', 5: '八号'
+}
+
+const normalizeConfigDisplay = (nextConfig) => {
+  const text = nextConfig.requirements?.text
+  const table = nextConfig.requirements?.table
+  if (text) text.fontSize_name = fontSizeMap[text.fontSize_pt] || text.fontSize_name || ''
+  if (table) table.fontSize_name = fontSizeMap[table.fontSize_pt] || table.fontSize_name || ''
+  return nextConfig
+}
+
 onMounted(async () => {
   try {
     const res = await getConfig('default_requirements.json')
-    config.value = res.data
+    config.value = normalizeConfigDisplay(res.data)
   } catch (e) {
     ElMessage.error('加载配置失败')
   }
@@ -397,7 +411,7 @@ const downloadFile = async () => {
 const handleConfigSave = async (newConfig) => {
   try {
     await updateConfig('default_requirements.json', newConfig)
-    config.value = newConfig
+    config.value = normalizeConfigDisplay(newConfig)
     showConfig.value = false
     ElMessage.success('配置已保存')
   } catch (e) {

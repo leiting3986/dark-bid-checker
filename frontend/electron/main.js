@@ -1,15 +1,17 @@
 const { app, BrowserWindow } = require('electron')
 const path = require('path')
 const http = require('http')
+const fs = require('fs')
+const { spawn } = require('child_process')
 
 let mainWindow = null
+let backendProcess = null
 
 const BACKEND_PORT = 8000
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`
 const FRONTEND_BASE_PORT = 3000
 let frontendUrl = `http://localhost:${FRONTEND_BASE_PORT}`
 
-// 等待服务就绪
 function waitForService(url, maxRetries = 30) {
   return new Promise((resolve) => {
     let retries = 0
@@ -32,7 +34,34 @@ function waitForService(url, maxRetries = 30) {
   })
 }
 
-// 检测前端端口
+function startBackend() {
+  const rootDir = path.resolve(__dirname, '..', '..')
+  const backendDir = path.join(rootDir, 'backend')
+  const backendScript = path.join(backendDir, 'main.py')
+  const packagedExe = path.join(process.resourcesPath || '', 'backend', 'main.exe')
+
+  if (fs.existsSync(packagedExe)) {
+    backendProcess = spawn(packagedExe, [], { cwd: path.dirname(packagedExe), windowsHide: true })
+    return true
+  }
+
+  if (fs.existsSync(backendScript)) {
+    backendProcess = spawn('python', [backendScript], { cwd: backendDir, windowsHide: true })
+    backendProcess.stdout.on('data', (data) => console.log(`[backend] ${data}`))
+    backendProcess.stderr.on('data', (data) => console.error(`[backend] ${data}`))
+    return true
+  }
+
+  return false
+}
+
+async function ensureBackendReady() {
+  if (await waitForService(BACKEND_URL, 3)) return true
+  console.log('后端未运行，尝试自动启动...')
+  if (!startBackend()) return false
+  return waitForService(BACKEND_URL, 30)
+}
+
 async function detectFrontendPort() {
   console.log('开始检测前端端口...')
   for (let port = FRONTEND_BASE_PORT; port <= 3010; port++) {
@@ -58,12 +87,12 @@ async function detectFrontendPort() {
       continue
     }
   }
-  console.log('使用默认端口:', FRONTEND_BASE_PORT)
+  frontendUrl = BACKEND_URL
+  console.log('未找到 Vite 前端，使用后端静态页面:', frontendUrl)
 }
 
-// 创建主窗口
-function createWindow() {
-  console.log('创建窗口，加载:', frontendUrl)
+function createWindow(backendReady) {
+  console.log('创建窗口，加载:', backendReady ? frontendUrl : '错误页')
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -74,28 +103,28 @@ function createWindow() {
     }
   })
 
-  mainWindow.loadURL(frontendUrl)
+  if (backendReady) {
+    mainWindow.loadURL(frontendUrl)
+  } else {
+    mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent('<h2>后端服务启动失败</h2><p>请确认 Python 环境可用，或手动运行 backend/main.py。</p>')}`)
+  }
 
   mainWindow.on('closed', () => {
     mainWindow = null
   })
 }
 
-// 应用就绪
 app.whenReady().then(async () => {
   console.log('Electron 就绪，等待服务...')
-
-  // 等待后端
-  await waitForService(BACKEND_URL)
-  console.log('后端就绪')
-
-  // 检测前端端口
-  await detectFrontendPort()
-
-  // 创建窗口
-  createWindow()
+  const backendReady = await ensureBackendReady()
+  if (backendReady) await detectFrontendPort()
+  createWindow(backendReady)
 })
 
 app.on('window-all-closed', () => {
   app.quit()
+})
+
+app.on('before-quit', () => {
+  if (backendProcess) backendProcess.kill()
 })

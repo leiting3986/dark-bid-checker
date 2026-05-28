@@ -1,7 +1,8 @@
 """API 路由"""
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from typing import Optional
+import logging
 import re
 import uuid
 from pathlib import Path
@@ -10,6 +11,7 @@ from ..core import ConfigManager, DarkBidChecker, DarkBidFixer, doc_to_docx, is_
 from ..core import parse_requirements, apply_parsed_config, get_parsed_fields_text
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # 配置管理器
 config_manager = ConfigManager(config_dir="config")
@@ -73,8 +75,16 @@ async def update_config(config_name: str, config: dict):
     return {"success": True, "path": path}
 
 
+@router.post("/config/{config_name}/reset")
+async def reset_config(config_name: str):
+    """恢复指定配置为内置默认值"""
+    validate_config_name(config_name)
+    config = config_manager.reset_to_builtin_default(config_name)
+    return {"success": True, "config": config}
+
+
 @router.post("/check")
-async def check_document(file: UploadFile = File(...), config_name: Optional[str] = None):
+async def check_document(file: UploadFile = File(...), config_name: Optional[str] = Form(None)):
     """检查文档格式"""
     filename_lower = file.filename.lower()
     if not (filename_lower.endswith(".docx") or filename_lower.endswith(".doc")):
@@ -88,6 +98,7 @@ async def check_document(file: UploadFile = File(...), config_name: Optional[str
     file_id = str(uuid.uuid4())
     original_path = UPLOAD_DIR / f"{file_id}_original{Path(file.filename).suffix}"
     input_path = UPLOAD_DIR / f"{file_id}.docx"
+    converted_path = UPLOAD_DIR / f"{file_id}_original.docx"
 
     try:
         # 保存原始文件
@@ -99,7 +110,6 @@ async def check_document(file: UploadFile = File(...), config_name: Optional[str
             try:
                 doc_to_docx(str(original_path), str(UPLOAD_DIR))
                 # 转换后的文件名基于 file_id
-                converted_path = UPLOAD_DIR / f"{file_id}_original.docx"
                 if converted_path.exists():
                     converted_path.rename(input_path)
                 else:
@@ -129,10 +139,11 @@ async def check_document(file: UploadFile = File(...), config_name: Optional[str
             "result": result,
         }
 
-    except Exception as e:
-        # 清理文件
-        if input_path.exists():
-            input_path.unlink()
+    except Exception:
+        logger.exception("检查文档失败")
+        for path in (original_path, input_path, converted_path, OUTPUT_DIR / f"{file_id}_fixed.docx"):
+            if path.exists():
+                path.unlink()
         raise HTTPException(status_code=500, detail="检查失败，请确认文件格式正确")
 
 
@@ -163,7 +174,8 @@ async def fix_document(file_id: str, config_name: Optional[str] = None):
             "result": result,
         }
 
-    except Exception as e:
+    except Exception:
+        logger.exception("修复文档失败")
         raise HTTPException(status_code=500, detail="修复失败，请确认文件格式正确")
 
 

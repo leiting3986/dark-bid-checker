@@ -3,8 +3,16 @@ from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_LINE_SPACING
 from typing import Dict, Any
-import copy
 from pathlib import Path
+
+EMU_PER_CM = 360000
+EMU_PER_PT = 12700
+
+
+def _same_emu(actual, expected, tolerance=1000):
+    if actual is None:
+        return False
+    return abs(int(actual) - int(expected)) <= tolerance
 
 
 class DarkBidFixer:
@@ -19,19 +27,11 @@ class DarkBidFixer:
         doc = Document(input_path)
         changes = []
 
-        # 修复页面设置
         changes.extend(self._fix_page_settings(doc))
-
-        # 修复页眉页脚
         changes.extend(self._fix_header_footer(doc))
-
-        # 修复正文格式
         changes.extend(self._fix_text_format(doc))
-
-        # 修复表格格式
         changes.extend(self._fix_table_format(doc))
 
-        # 保存修复后的文档
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         doc.save(output_path)
 
@@ -50,52 +50,85 @@ class DarkBidFixer:
 
         width_mm = page_req.get("width_mm", 210)
         height_mm = page_req.get("height_mm", 297)
+        page_size = page_req.get("size", "A4")
+
+        changed = False
+        expected_width = Cm(width_mm / 10)
+        expected_height = Cm(height_mm / 10)
+        expected_margins = {
+            "top_margin": Cm(margins.get("top_cm", 2.5)),
+            "bottom_margin": Cm(margins.get("bottom_cm", 2.5)),
+            "left_margin": Cm(margins.get("left_cm", 2.5)),
+            "right_margin": Cm(margins.get("right_cm", 2.5)),
+        }
 
         for section in doc.sections:
-            section.page_width = Cm(width_mm / 10)
-            section.page_height = Cm(height_mm / 10)
+            if not _same_emu(section.page_width, expected_width):
+                section.page_width = expected_width
+                changed = True
+            if not _same_emu(section.page_height, expected_height):
+                section.page_height = expected_height
+                changed = True
+            for attr, expected in expected_margins.items():
+                if not _same_emu(getattr(section, attr), expected):
+                    setattr(section, attr, expected)
+                    changed = True
 
-            # 设置页边距
-            section.top_margin = Cm(margins.get("top_cm", 2.5))
-            section.bottom_margin = Cm(margins.get("bottom_cm", 2.5))
-            section.left_margin = Cm(margins.get("left_cm", 2.5))
-            section.right_margin = Cm(margins.get("right_cm", 2.5))
-
-            changes.append("页面设置: 纸张大小 A4, 页边距 2.5cm")
-
+        if changed:
+            changes.append(f"页面设置: 纸张大小 {page_size}, 页边距已按配置修复")
         return changes
 
     def _fix_header_footer(self, doc: Document) -> list:
         """修复页眉页脚"""
-        from docx.oxml.ns import qn
         changes = []
         page_req = self.req.get("page", {})
 
         if page_req.get("noHeader", True):
+            changed = False
             for section in doc.sections:
-                header = section.header
-                header.is_linked_to_previous = False
-                # 清除所有内容元素（段落、表格等）
-                for child in list(header._element):
-                    if child.tag.endswith('}p') or child.tag.endswith('}tbl'):
-                        header._element.remove(child)
-                # 添加一个空段落（docx 要求至少有一个段落）
-                header.add_paragraph()
+                changed = self._clear_container(section.header) or changed
+            if changed:
                 changes.append("删除页眉")
 
         if page_req.get("noFooter", True):
+            changed = False
             for section in doc.sections:
-                footer = section.footer
-                footer.is_linked_to_previous = False
-                # 清除所有内容元素
-                for child in list(footer._element):
-                    if child.tag.endswith('}p') or child.tag.endswith('}tbl'):
-                        footer._element.remove(child)
-                # 添加一个空段落
-                footer.add_paragraph()
+                changed = self._clear_container(section.footer) or changed
+            if changed:
                 changes.append("删除页脚")
 
         return changes
+
+    def _clear_container(self, container):
+        changed = False
+        if container.is_linked_to_previous:
+            has_content = self._container_has_content(container)
+            if not has_content:
+                return False
+            changed = True
+        else:
+            has_content = self._container_has_content(container)
+            changed = has_content
+        container.is_linked_to_previous = False
+        for child in list(container._element):
+            if child.tag.endswith('}p') or child.tag.endswith('}tbl'):
+                if child.tag.endswith('}tbl') or ''.join(child.itertext()).strip() or "PAGE" in child.xml or "NUMPAGES" in child.xml:
+                    changed = True
+                container._element.remove(child)
+        container.add_paragraph()
+        return changed
+
+    @staticmethod
+    def _container_has_content(container):
+        for para in container.paragraphs:
+            if para.text.strip() or "PAGE" in para._element.xml or "NUMPAGES" in para._element.xml:
+                return True
+        for table in container.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip():
+                        return True
+        return False
 
     def _fix_text_format(self, doc: Document) -> list:
         """修复正文格式"""
@@ -105,45 +138,26 @@ class DarkBidFixer:
         expected_font = text_req.get("font", "宋体")
         expected_size = text_req.get("fontSize_pt", 14)
         expected_color = text_req.get("fontColor", "000000")
+        expected_spacing = text_req.get("paragraphSpacing_pt", 0)
         expected_line_spacing = text_req.get("lineSpacing", {}).get("value_pt", 28)
 
-        font_changed = False
-        size_changed = False
-        color_changed = False
-        spacing_changed = False
+        changed = self._fix_paragraphs(
+            doc.paragraphs,
+            expected_font,
+            expected_size,
+            expected_color,
+            expected_spacing,
+            expected_line_spacing,
+        )
 
-        for para in doc.paragraphs:
-            # 修复段落格式
-            pf = para.paragraph_format
-            pf.space_before = Pt(0)
-            pf.space_after = Pt(0)
-            pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-            pf.line_spacing = Pt(expected_line_spacing)
-            spacing_changed = True
-
-            # 修复文字格式
-            for run in para.runs:
-                if run.font.name != expected_font:
-                    run.font.name = expected_font
-                    font_changed = True
-
-                if run.font.size != Pt(expected_size):
-                    run.font.size = Pt(expected_size)
-                    size_changed = True
-
-                color_rgb = RGBColor.from_string(expected_color)
-                if run.font.color is None or run.font.color.rgb != color_rgb:
-                    run.font.color.rgb = color_rgb
-                    color_changed = True
-
-        if font_changed:
+        if changed["font"]:
             changes.append(f"字体: 修改为 {expected_font}")
-        if size_changed:
+        if changed["size"]:
             changes.append(f"字号: 修改为 {expected_size}pt")
-        if color_changed:
+        if changed["color"]:
             changes.append(f"字体颜色: 修改为 #{expected_color}")
-        if spacing_changed:
-            changes.append(f"段落间距: 段前段后 0pt, 行距 {expected_line_spacing}pt")
+        if changed["spacing"]:
+            changes.append(f"段落间距: 段前段后 {expected_spacing}pt, 行距 {expected_line_spacing}pt")
 
         return changes
 
@@ -151,38 +165,67 @@ class DarkBidFixer:
         """修复表格格式"""
         changes = []
         table_req = self.req.get("table", {})
+        text_req = self.req.get("text", {})
 
         expected_font = table_req.get("font", "仿宋")
         expected_size = table_req.get("fontSize_pt", 10.5)
         expected_color = table_req.get("fontColor", "000000")
+        expected_spacing = text_req.get("paragraphSpacing_pt", 0)
+        expected_line_spacing = text_req.get("lineSpacing", {}).get("value_pt", 28)
 
-        font_changed = False
-        size_changed = False
-        color_changed = False
-
+        all_paragraphs = []
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    for para in cell.paragraphs:
-                        for run in para.runs:
-                            if run.font.name != expected_font:
-                                run.font.name = expected_font
-                                font_changed = True
+                    all_paragraphs.extend(cell.paragraphs)
 
-                            if run.font.size != Pt(expected_size):
-                                run.font.size = Pt(expected_size)
-                                size_changed = True
+        changed = self._fix_paragraphs(
+            all_paragraphs,
+            expected_font,
+            expected_size,
+            expected_color,
+            expected_spacing,
+            expected_line_spacing,
+        )
 
-                            color_rgb = RGBColor.from_string(expected_color)
-                            if run.font.color is None or run.font.color.rgb != color_rgb:
-                                run.font.color.rgb = color_rgb
-                                color_changed = True
-
-        if font_changed:
+        if changed["font"]:
             changes.append(f"表格字体: 修改为 {expected_font}")
-        if size_changed:
+        if changed["size"]:
             changes.append(f"表格字号: 修改为 {expected_size}pt")
-        if color_changed:
+        if changed["color"]:
             changes.append(f"表格字体颜色: 修改为 #{expected_color}")
+        if changed["spacing"]:
+            changes.append(f"表格段落间距: 段前段后 {expected_spacing}pt, 行距 {expected_line_spacing}pt")
 
         return changes
+
+    def _fix_paragraphs(self, paragraphs, expected_font, expected_size, expected_color, expected_spacing, expected_line_spacing):
+        changed = {"font": False, "size": False, "color": False, "spacing": False}
+        color_rgb = RGBColor.from_string(expected_color)
+
+        for para in paragraphs:
+            pf = para.paragraph_format
+            if not _same_emu(pf.space_before, Pt(expected_spacing)):
+                pf.space_before = Pt(expected_spacing)
+                changed["spacing"] = True
+            if not _same_emu(pf.space_after, Pt(expected_spacing)):
+                pf.space_after = Pt(expected_spacing)
+                changed["spacing"] = True
+            if pf.line_spacing_rule != WD_LINE_SPACING.EXACTLY or not _same_emu(pf.line_spacing, Pt(expected_line_spacing)):
+                pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+                pf.line_spacing = Pt(expected_line_spacing)
+                changed["spacing"] = True
+
+            for run in para.runs:
+                if run.font.name != expected_font:
+                    run.font.name = expected_font
+                    run._element.rPr.rFonts.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia', expected_font)
+                    changed["font"] = True
+                if not _same_emu(run.font.size, Pt(expected_size)):
+                    run.font.size = Pt(expected_size)
+                    changed["size"] = True
+                if run.font.color is None or run.font.color.rgb != color_rgb:
+                    run.font.color.rgb = color_rgb
+                    changed["color"] = True
+
+        return changed

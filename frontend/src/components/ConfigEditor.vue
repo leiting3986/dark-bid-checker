@@ -169,8 +169,8 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { importConfig, getConfig } from '../utils/api'
+import { ref, computed, watch } from 'vue'
+import { importConfig, resetConfig } from '../utils/api'
 
 const props = defineProps({
   config: { type: Object, required: true }
@@ -179,6 +179,32 @@ const props = defineProps({
 const emit = defineEmits(['save', 'cancel'])
 
 const form = ref(JSON.parse(JSON.stringify(props.config)))
+
+const pageSizeMap = {
+  A3: { width_mm: 297, height_mm: 420 },
+  A4: { width_mm: 210, height_mm: 297 },
+  B5: { width_mm: 176, height_mm: 250 }
+}
+
+const ensurePath = (root, parts) => {
+  let target = root
+  for (const part of parts) {
+    if (!target[part] || typeof target[part] !== 'object') target[part] = {}
+    target = target[part]
+  }
+  return target
+}
+
+const syncPageSize = () => {
+  const page = form.value.requirements.page
+  const size = page.size
+  if (pageSizeMap[size]) {
+    page.width_mm = pageSizeMap[size].width_mm
+    page.height_mm = pageSizeMap[size].height_mm
+  }
+}
+
+watch(() => form.value.requirements.page.size, syncPageSize)
 
 const fontSizeMap = {
   42: '初号', 36: '小初', 26: '一号', 24: '小一', 22: '二号',
@@ -228,12 +254,10 @@ const handleApply = () => {
 
   for (const [key, value] of Object.entries(parsedData)) {
     const parts = key.split('.')
-    let target = req
-    for (let i = 0; i < parts.length - 1; i++) {
-      target = target[parts[i]]
-    }
+    const target = ensurePath(req, parts.slice(0, -1))
     target[parts[parts.length - 1]] = value
   }
+  syncPageSize()
 
   showImport.value = false
   importText.value = ''
@@ -244,14 +268,17 @@ const handleApply = () => {
 const handleRestore = async () => {
   if (!confirm('确定恢复默认配置？当前修改将丢失')) return
   try {
-    const res = await getConfig('default_requirements.json')
-    form.value = JSON.parse(JSON.stringify(res.data))
+    const res = await resetConfig('default_requirements.json')
+    form.value = JSON.parse(JSON.stringify(res.data.config))
   } catch (e) {
     alert('恢复失败')
   }
 }
 
-const handleSave = () => emit('save', form.value)
+const handleSave = () => {
+  syncPageSize()
+  emit('save', form.value)
+}
 </script>
 
 <style scoped>
