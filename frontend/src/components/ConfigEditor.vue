@@ -8,6 +8,12 @@
         </svg>
         一键导入配置
       </button>
+      <button class="btn btn-restore" @click="handleRestore">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16">
+          <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        恢复默认
+      </button>
     </div>
 
     <!-- 导入弹窗 -->
@@ -164,7 +170,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { importConfig } from '../utils/api'
+import { importConfig, getConfig } from '../utils/api'
 
 const props = defineProps({
   config: { type: Object, required: true }
@@ -235,6 +241,16 @@ const handleApply = () => {
   parsedData = null
 }
 
+const handleRestore = async () => {
+  if (!confirm('确定恢复默认配置？当前修改将丢失')) return
+  try {
+    const res = await getConfig('default_requirements.json')
+    form.value = JSON.parse(JSON.stringify(res.data))
+  } catch (e) {
+    alert('恢复失败')
+  }
+}
+
 const handleSave = () => emit('save', form.value)
 </script>
 
@@ -260,6 +276,8 @@ const handleSave = () => emit('save', form.value)
 
 /* 一键导入 */
 .import-section {
+  display: flex;
+  gap: 10px;
   margin-bottom: 24px;
 }
 
@@ -282,6 +300,26 @@ const handleSave = () => emit('save', form.value)
 .btn-import:hover {
   background: rgba(0, 113, 227, 0.08);
   border-color: rgba(0, 113, 227, 0.5);
+}
+
+.btn-restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.02);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-restore:hover {
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .import-overlay {
