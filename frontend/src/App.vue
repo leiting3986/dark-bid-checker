@@ -967,13 +967,13 @@ body {
 }
 
 .issue-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 
 .issue-item {
-  padding: 14px 16px;
+  padding: 12px 14px;
   border-radius: var(--radius-md);
   background: rgba(0, 0, 0, 0.02);
   border-left: 3px solid transparent;
@@ -1023,7 +1023,7 @@ body {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
-  padding-left: 56px;
+  padding-left: 48px;
 }
 
 .issue-location {
@@ -1160,6 +1160,10 @@ body {
 
   .stats {
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  .issue-list {
+    grid-template-columns: 1fr;
   }
 }
 </style>
