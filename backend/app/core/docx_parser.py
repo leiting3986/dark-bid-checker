@@ -182,7 +182,13 @@ class DocxParser:
         """检查是否有页眉"""
         try:
             header = section.header
-            return header.is_linked_to_previous is False and len(header.paragraphs) > 0
+            if header.is_linked_to_previous:
+                return False
+            # 检查是否有非空段落或表格
+            for para in header.paragraphs:
+                if para.text.strip():
+                    return True
+            return False
         except Exception:
             return False
 
@@ -190,6 +196,12 @@ class DocxParser:
         """检查是否有页脚"""
         try:
             footer = section.footer
-            return footer.is_linked_to_previous is False and len(footer.paragraphs) > 0
+            if footer.is_linked_to_previous:
+                return False
+            # 检查是否有非空段落或表格
+            for para in footer.paragraphs:
+                if para.text.strip():
+                    return True
+            return False
         except Exception:
             return False

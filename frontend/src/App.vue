@@ -4,7 +4,7 @@
     <el-header class="app-header">
       <div class="header-content">
         <h1>暗标检查工具</h1>
-        <el-tag type="info">v1.1</el-tag>
+        <el-tag type="info">v1.2</el-tag>
       </div>
     </el-header>
 

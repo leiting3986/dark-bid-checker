@@ -67,6 +67,7 @@ class DarkBidFixer:
 
     def _fix_header_footer(self, doc: Document) -> list:
         """修复页眉页脚"""
+        from docx.oxml.ns import qn
         changes = []
         page_req = self.req.get("page", {})
 
@@ -74,16 +75,24 @@ class DarkBidFixer:
             for section in doc.sections:
                 header = section.header
                 header.is_linked_to_previous = False
-                for para in header.paragraphs:
-                    para.clear()
+                # 清除所有内容元素（段落、表格等）
+                for child in list(header._element):
+                    if child.tag.endswith('}p') or child.tag.endswith('}tbl'):
+                        header._element.remove(child)
+                # 添加一个空段落（docx 要求至少有一个段落）
+                header.add_paragraph()
                 changes.append("删除页眉")
 
         if page_req.get("noFooter", True):
             for section in doc.sections:
                 footer = section.footer
                 footer.is_linked_to_previous = False
-                for para in footer.paragraphs:
-                    para.clear()
+                # 清除所有内容元素
+                for child in list(footer._element):
+                    if child.tag.endswith('}p') or child.tag.endswith('}tbl'):
+                        footer._element.remove(child)
+                # 添加一个空段落
+                footer.add_paragraph()
                 changes.append("删除页脚")
 
         return changes
