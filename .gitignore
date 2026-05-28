@@ -31,5 +31,27 @@ backend/uploads/*
 backend/output/*
 !backend/output/.gitkeep
 
+# Electron 打包产物
+frontend/release/
+frontend/dist/
+*.exe
+*.msi
+*.dmg
+
+# PyInstaller 打包产物
+build/
+build2/
+dist/
+output/
+output2/
+*.spec
+
+# 打包产物
+*.zip
+dark-bid-checker-portable/
+
+# Playwright
+.playwright-mcp/
+
 # 日志
 *.log
