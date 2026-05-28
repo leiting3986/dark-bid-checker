@@ -1,5 +1,40 @@
 <template>
   <div class="config-editor">
+    <!-- 一键导入 -->
+    <div class="import-section">
+      <button class="btn btn-import" @click="showImport = true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16">
+          <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        一键导入配置
+      </button>
+    </div>
+
+    <!-- 导入弹窗 -->
+    <div v-if="showImport" class="import-overlay" @click.self="showImport = false">
+      <div class="import-dialog">
+        <h3>粘贴配置要求</h3>
+        <p class="import-hint">粘贴招标文件中的格式要求，系统自动识别</p>
+        <textarea
+          v-model="importText"
+          rows="8"
+          placeholder="例如：纸张A4，页边距上下2.5cm，左右3cm，正文宋体四号，行距28磅，表格仿宋五号，禁止页眉页脚"
+        ></textarea>
+        <div v-if="importResult" class="import-preview">
+          <h4>识别结果：</h4>
+          <ul>
+            <li v-for="(item, i) in importResult" :key="i">{{ item }}</li>
+          </ul>
+        </div>
+        <div class="import-actions">
+          <button class="btn btn-secondary" @click="showImport = false">取消</button>
+          <button class="btn btn-secondary" @click="handleParse">解析</button>
+          <button class="btn btn-primary" :disabled="!importResult" @click="handleApply">应用</button>
+        </div>
+        <p v-if="importError" class="import-error">{{ importError }}</p>
+      </div>
+    </div>
+
     <!-- 页面设置 -->
     <div class="section">
       <h3 class="section-title">页面设置</h3>
@@ -129,6 +164,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { importConfig } from '../utils/api'
 
 const props = defineProps({
   config: { type: Object, required: true }
@@ -160,6 +196,45 @@ const forbiddenText = computed({
   }
 })
 
+// 一键导入
+const showImport = ref(false)
+const importText = ref('')
+const importResult = ref(null)
+const importError = ref('')
+let parsedData = null
+
+const handleParse = async () => {
+  if (!importText.value.trim()) return
+  importError.value = ''
+  importResult.value = null
+  try {
+    const res = await importConfig(importText.value)
+    importResult.value = res.data.fields
+    parsedData = res.data.parsed
+  } catch (e) {
+    importError.value = e.response?.data?.detail || '解析失败'
+  }
+}
+
+const handleApply = () => {
+  if (!parsedData) return
+  const req = form.value.requirements
+
+  for (const [key, value] of Object.entries(parsedData)) {
+    const parts = key.split('.')
+    let target = req
+    for (let i = 0; i < parts.length - 1; i++) {
+      target = target[parts[i]]
+    }
+    target[parts[parts.length - 1]] = value
+  }
+
+  showImport.value = false
+  importText.value = ''
+  importResult.value = null
+  parsedData = null
+}
+
 const handleSave = () => emit('save', form.value)
 </script>
 
@@ -181,6 +256,128 @@ const handleSave = () => emit('save', form.value)
 .config-editor::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.1);
   border-radius: 3px;
+}
+
+/* 一键导入 */
+.import-section {
+  margin-bottom: 24px;
+}
+
+.btn-import {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 1px dashed rgba(0, 113, 227, 0.3);
+  border-radius: 10px;
+  background: rgba(0, 113, 227, 0.04);
+  color: var(--accent-blue);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-import:hover {
+  background: rgba(0, 113, 227, 0.08);
+  border-color: rgba(0, 113, 227, 0.5);
+}
+
+.import-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.import-dialog {
+  width: 90%;
+  max-width: 520px;
+  background: white;
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.import-dialog h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.import-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.import-dialog textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.02);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.import-dialog textarea:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.import-preview {
+  margin-top: 16px;
+  padding: 14px;
+  background: rgba(52, 199, 89, 0.06);
+  border-radius: 10px;
+}
+
+.import-preview h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-green);
+  margin-bottom: 10px;
+}
+
+.import-preview ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.import-preview li {
+  font-size: 13px;
+  color: var(--text-primary);
+  padding: 3px 0;
+}
+
+.import-preview li::before {
+  content: '✓ ';
+  color: var(--accent-green);
+}
+
+.import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.import-error {
+  font-size: 13px;
+  color: var(--accent-red);
+  margin-top: 10px;
+  text-align: right;
 }
 
 .section {

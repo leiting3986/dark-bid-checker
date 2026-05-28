@@ -40,4 +40,7 @@ export const downloadFixed = (fileId) => {
 // 清理文件
 export const cleanupFiles = (fileId) => api.delete(`/cleanup/${fileId}`)
 
+// 从文本导入配置
+export const importConfig = (text) => api.post('/config/import', { text })
+
 export default api

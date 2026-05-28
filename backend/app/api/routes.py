@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 from ..core import ConfigManager, DarkBidChecker, DarkBidFixer, doc_to_docx, is_doc_file
+from ..core import parse_requirements, apply_parsed_config, get_parsed_fields_text
 
 router = APIRouter()
 
@@ -195,3 +196,22 @@ async def cleanup_files(file_id: str):
         output_path.unlink()
 
     return {"success": True}
+
+
+@router.post("/config/import")
+async def import_config(data: dict):
+    """从文本解析配置"""
+    text = data.get("text", "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="请输入配置文本")
+
+    parsed = parse_requirements(text)
+    if not parsed:
+        raise HTTPException(status_code=400, detail="未能识别任何配置项，请检查输入格式")
+
+    fields = get_parsed_fields_text(parsed)
+    return {
+        "success": True,
+        "parsed": parsed,
+        "fields": fields,
+    }
