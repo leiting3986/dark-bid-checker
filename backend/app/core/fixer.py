@@ -1,7 +1,9 @@
-"""暗标格式修复模块"""
+"""暗标格式修复模块 v1.0.4 - 增强样式和段落字体修复"""
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_LINE_SPACING
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 from typing import Dict, Any
 from pathlib import Path
 
@@ -31,6 +33,7 @@ class DarkBidFixer:
         changes.extend(self._fix_header_footer(doc))
         changes.extend(self._fix_text_format(doc))
         changes.extend(self._fix_table_format(doc))
+        changes.extend(self._fix_styles(doc))
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         doc.save(output_path)
@@ -158,6 +161,8 @@ class DarkBidFixer:
             changes.append(f"字体颜色: 修改为 #{expected_color}")
         if changed["spacing"]:
             changes.append(f"段落间距: 段前段后 {expected_spacing}pt, 行距 {expected_line_spacing}pt")
+        if changed["format"]:
+            changes.append("格式: 已清除加粗/倾斜/下划线/删除线")
 
         return changes
 
@@ -196,15 +201,68 @@ class DarkBidFixer:
             changes.append(f"表格字体颜色: 修改为 #{expected_color}")
         if changed["spacing"]:
             changes.append(f"表格段落间距: 段前段后 {expected_spacing}pt, 行距 {expected_line_spacing}pt")
+        if changed["format"]:
+            changes.append("表格格式: 已清除加粗/倾斜/下划线/删除线")
 
         return changes
 
+    def _fix_styles(self, doc: Document) -> list:
+        expected_font = self.req.get("text", {}).get("font", "宋体")
+        changed = False
+        for style in doc.styles:
+            if not hasattr(style, "_element") or not hasattr(style, "font"):
+                continue
+            rPr = style._element.get_or_add_rPr()
+            rFonts = rPr.get_or_add_rFonts()
+            if self._fix_rfonts(rFonts, expected_font):
+                changed = True
+            if style.font.name != expected_font:
+                style.font.name = expected_font
+                changed = True
+        defaults = doc.styles.element.find(qn('w:docDefaults'))
+        if defaults is not None:
+            rPr_default = defaults.find(qn('w:rPrDefault'))
+            rPr = rPr_default.find(qn('w:rPr')) if rPr_default is not None else None
+            if rPr is not None:
+                rFonts = rPr.find(qn('w:rFonts'))
+                if rFonts is None:
+                    rFonts = rPr._add_rFonts()
+                if self._fix_rfonts(rFonts, expected_font):
+                    changed = True
+        return [f"样式字体: 修改为 {expected_font}"] if changed else []
+
+    @staticmethod
+    def _fix_rfonts(rFonts, expected_font):
+        changed = False
+        for attr in ['ascii', 'hAnsi', 'eastAsia', 'cs']:
+            key = qn(f'w:{attr}')
+            if rFonts.get(key) != expected_font:
+                rFonts.set(key, expected_font)
+                changed = True
+        for attr in ['asciiTheme', 'eastAsiaTheme', 'hAnsiTheme', 'cstheme']:
+            key = qn(f'w:{attr}')
+            if key in rFonts.attrib:
+                del rFonts.attrib[key]
+                changed = True
+        return changed
+
     def _fix_paragraphs(self, paragraphs, expected_font, expected_size, expected_color, expected_spacing, expected_line_spacing):
-        changed = {"font": False, "size": False, "color": False, "spacing": False}
+        changed = {"font": False, "size": False, "color": False, "spacing": False, "format": False}
         color_rgb = RGBColor.from_string(expected_color)
 
         for para in paragraphs:
             pf = para.paragraph_format
+            pPr = para._element.get_or_add_pPr()
+            p_rPr = pPr.find(qn('w:rPr'))
+            if p_rPr is None:
+                p_rPr = OxmlElement('w:rPr')
+                pPr.insert(0, p_rPr)
+            p_rFonts = p_rPr.find(qn('w:rFonts'))
+            if p_rFonts is None:
+                p_rFonts = OxmlElement('w:rFonts')
+                p_rPr.insert(0, p_rFonts)
+            if self._fix_rfonts(p_rFonts, expected_font):
+                changed["font"] = True
             if not _same_emu(pf.space_before, Pt(expected_spacing)):
                 pf.space_before = Pt(expected_spacing)
                 changed["spacing"] = True
@@ -217,9 +275,20 @@ class DarkBidFixer:
                 changed["spacing"] = True
 
             for run in para.runs:
-                if run.font.name != expected_font:
+                # 检查是否需要修复字体（检查 eastAsia 和 font.name）
+                need_fix_font = False
+                rPr = run._element.rPr
+                if rPr is None or rPr.rFonts is None:
+                    need_fix_font = True
+                elif any(rPr.rFonts.get(qn(f'w:{attr}')) != expected_font for attr in ['ascii', 'hAnsi', 'eastAsia', 'cs']):
+                    need_fix_font = True
+                if not need_fix_font and run.font.name != expected_font:
+                    need_fix_font = True
+
+                if need_fix_font:
                     run.font.name = expected_font
-                    run._element.rPr.rFonts.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia', expected_font)
+                    rFonts = run._element.get_or_add_rPr().get_or_add_rFonts()
+                    self._fix_rfonts(rFonts, expected_font)
                     changed["font"] = True
                 if not _same_emu(run.font.size, Pt(expected_size)):
                     run.font.size = Pt(expected_size)
@@ -227,5 +296,18 @@ class DarkBidFixer:
                 if run.font.color is None or run.font.color.rgb != color_rgb:
                     run.font.color.rgb = color_rgb
                     changed["color"] = True
+                # 清除格式：加粗/倾斜/下划线/删除线
+                if run.font.bold:
+                    run.font.bold = False
+                    changed["format"] = True
+                if run.font.italic:
+                    run.font.italic = False
+                    changed["format"] = True
+                if run.font.underline is not None:
+                    run.font.underline = None
+                    changed["format"] = True
+                if run.font.strike:
+                    run.font.strike = False
+                    changed["format"] = True
 
         return changed

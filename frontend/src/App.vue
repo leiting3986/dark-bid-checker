@@ -20,7 +20,7 @@
           </div>
           <div class="logo-text">
             <h1>暗标检查工具</h1>
-            <span class="version">v1.2</span>
+            <span class="version">v1.6</span>
           </div>
         </div>
       </header>

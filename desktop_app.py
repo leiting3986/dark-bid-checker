@@ -22,12 +22,12 @@ def start_backend():
 
 def wait_for_backend():
     import urllib.request
-    for i in range(30):
+    for i in range(20):
         try:
             urllib.request.urlopen('http://127.0.0.1:8000/')
             return True
         except:
-            time.sleep(1)
+            time.sleep(0.3)
     return False
 
 if __name__ == '__main__':

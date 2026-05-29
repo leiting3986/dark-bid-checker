@@ -64,4 +64,5 @@ python desktop_app.py
 
 - Python: 中文注释
 - Vue: Composition API
+- 每次修改代码或功能时，必须同步更新对应版本号
 - 提交信息: 中文

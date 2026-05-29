@@ -1,6 +1,7 @@
-"""Word 文档解析模块"""
+"""Word 文档解析模块 v1.0.3 - 增强样式字体识别"""
 from docx import Document
 from docx.enum.text import WD_LINE_SPACING
+from docx.oxml.ns import qn
 from typing import Dict, List, Any, Optional
 
 
@@ -159,9 +160,15 @@ class DocxParser:
             "font_color": self._effective_font_color(run, para),
             "bold": run.font.bold,
             "italic": run.font.italic,
+            "underline": run.font.underline is not None,
+            "strike": run.font.strike,
         }
 
     def _effective_font_name(self, run, para) -> Optional[str]:
+        for element in (run._element, run.style._element if run.style else None, para.style._element if para.style else None):
+            font_name = self._element_east_asia_font(element)
+            if font_name:
+                return font_name
         if run.font.name:
             return run.font.name
         if run.style and run.style.font.name:
@@ -169,6 +176,12 @@ class DocxParser:
         if para.style and para.style.font.name:
             return para.style.font.name
         return None
+
+    @staticmethod
+    def _element_east_asia_font(element) -> Optional[str]:
+        if element is None or element.rPr is None or element.rPr.rFonts is None:
+            return None
+        return element.rPr.rFonts.get(qn('w:eastAsia'))
 
     def _effective_font_size(self, run, para) -> Optional[float]:
         if run.font.size:

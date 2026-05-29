@@ -1,4 +1,4 @@
-"""暗标格式检查核心模块"""
+"""暗标格式检查核心模块 v1.0.3 - 添加加粗/倾斜/下划线/删除线检查"""
 from typing import Dict, List, Any
 from .docx_parser import DocxParser
 import re
@@ -163,6 +163,7 @@ class DarkBidChecker:
         size_errors = []
         color_errors = []
         spacing_errors = []
+        format_errors = []  # 加粗/倾斜/下划线/删除线
 
         for para in paragraphs:
             if not para["runs"]:
@@ -185,6 +186,15 @@ class DarkBidChecker:
                     size_errors.append(f"字号: {run['font_size_pt']}pt (位置: {location})")
                 if run["font_color"] and run["font_color"] != expected_color:
                     color_errors.append(f"颜色: #{run['font_color']} (位置: {location})")
+                # 检查格式：加粗/倾斜/下划线/删除线
+                if run["bold"]:
+                    format_errors.append(f"加粗 (位置: {location})")
+                if run["italic"]:
+                    format_errors.append(f"倾斜 (位置: {location})")
+                if run["underline"]:
+                    format_errors.append(f"下划线 (位置: {location})")
+                if run["strike"]:
+                    format_errors.append(f"删除线 (位置: {location})")
 
         if font_errors:
             result.add_error("正文格式", f"字体不符合要求 (共 {len(font_errors)} 处)", f"要求: {expected_font}, " + "; ".join(font_errors[:5]), "正文")
@@ -200,6 +210,11 @@ class DarkBidChecker:
             result.add_error("正文格式", f"字体颜色不符合要求 (共 {len(color_errors)} 处)", f"要求: #{expected_color}, " + "; ".join(color_errors[:5]), "正文")
         else:
             result.add_passed(f"字体颜色: #{expected_color}")
+
+        if format_errors:
+            result.add_error("正文格式", f"不允许加粗/倾斜/下划线/删除线 (共 {len(format_errors)} 处)", "; ".join(format_errors[:5]), "正文")
+        else:
+            result.add_passed("无加粗/倾斜/下划线/删除线")
 
         if spacing_errors:
             result.add_warning("正文格式", "段落间距可能不符合要求", "; ".join(spacing_errors[:5]), "正文")
@@ -225,6 +240,7 @@ class DarkBidChecker:
         font_errors = []
         size_errors = []
         color_errors = []
+        format_errors = []  # 加粗/倾斜/下划线/删除线
 
         for table in tables:
             for cell in table["cells"]:
@@ -237,6 +253,15 @@ class DarkBidChecker:
                             size_errors.append(f"{location}: {run['font_size_pt']}pt")
                         if run["font_color"] and run["font_color"] != expected_color:
                             color_errors.append(f"{location}: #{run['font_color']}")
+                        # 检查格式：加粗/倾斜/下划线/删除线
+                        if run["bold"]:
+                            format_errors.append(f"加粗 {location}")
+                        if run["italic"]:
+                            format_errors.append(f"倾斜 {location}")
+                        if run["underline"]:
+                            format_errors.append(f"下划线 {location}")
+                        if run["strike"]:
+                            format_errors.append(f"删除线 {location}")
 
         if font_errors:
             result.add_error("表格格式", f"表格字体不符合要求 (共 {len(font_errors)} 处)", f"要求: {expected_font}, " + "; ".join(font_errors[:5]), "表格")
@@ -252,6 +277,11 @@ class DarkBidChecker:
             result.add_error("表格格式", f"表格字体颜色不符合要求 (共 {len(color_errors)} 处)", f"要求: #{expected_color}, " + "; ".join(color_errors[:5]), "表格")
         else:
             result.add_passed(f"表格字体颜色: #{expected_color}")
+
+        if format_errors:
+            result.add_error("表格格式", f"表格不允许加粗/倾斜/下划线/删除线 (共 {len(format_errors)} 处)", "; ".join(format_errors[:5]), "表格")
+        else:
+            result.add_passed("表格无加粗/倾斜/下划线/删除线")
 
     def _check_images(self, parser: DocxParser, result: CheckResult):
         """检查图片"""
