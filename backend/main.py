@@ -12,7 +12,7 @@ from app.api.routes import router
 app = FastAPI(
     title="暗标检查工具",
     description="检查和修复 Word 文档的暗标格式",
-    version="1.0.1",
+    version="1.0.3",
 )
 
 LOCAL_ORIGINS = [

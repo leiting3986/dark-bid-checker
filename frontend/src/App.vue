@@ -20,7 +20,7 @@
           </div>
           <div class="logo-text">
             <h1>暗标检查工具</h1>
-            <span class="version">v1.6</span>
+            <span class="version">v1.8</span>
           </div>
         </div>
       </header>
@@ -392,13 +392,23 @@ const startFix = async () => {
 const downloadFile = async () => {
   if (!fixedFileId.value) return
 
+  const name = selectedFile.value?.name || 'document.docx'
+  const downloadName = `fixed_${name}`
+
   try {
+    if (window.pywebview?.api?.save_fixed_file) {
+      const result = await window.pywebview.api.save_fixed_file(fixedFileId.value, downloadName)
+      if (result?.success) {
+        ElMessage.success('文件已保存')
+      }
+      return
+    }
+
     const res = await downloadFixed(fixedFileId.value)
     const url = window.URL.createObjectURL(new Blob([res.data]))
     const link = document.createElement('a')
     link.href = url
-    const name = selectedFile.value?.name || 'document'
-    link.setAttribute('download', `fixed_${name}`)
+    link.setAttribute('download', downloadName)
     document.body.appendChild(link)
     link.click()
     link.remove()
